@@ -20,6 +20,10 @@ app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
 
 # In-memory activity database
+ACTIVITY_RULES = {
+    "max_activities_per_student": 2,
+}
+
 activities = {
     "Chess Club": {
         "description": "Learn strategies and compete in chess tournaments",
@@ -78,6 +82,38 @@ activities = {
 }
 
 
+def get_student_activity_count(email: str) -> int:
+    """Return the number of activities a student is currently registered for."""
+    return sum(
+        1
+        for activity in activities.values()
+        if email in activity["participants"]
+    )
+
+
+def validate_activity_signup(activity_name: str, email: str) -> None:
+    """Validate whether a student can sign up for an activity."""
+    if activity_name not in activities:
+        raise HTTPException(status_code=404, detail="Activity not found")
+
+    activity = activities[activity_name]
+
+    if email in activity["participants"]:
+        raise HTTPException(status_code=400, detail="Student is already signed up")
+
+    if len(activity["participants"]) >= activity["max_participants"]:
+        raise HTTPException(status_code=400, detail="Activity is already full")
+
+    if get_student_activity_count(email) >= ACTIVITY_RULES["max_activities_per_student"]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Student has reached the maximum number of activities "
+                f"allowed ({ACTIVITY_RULES['max_activities_per_student']})"
+            ),
+        )
+
+
 @app.get("/")
 def root():
     return RedirectResponse(url="/static/index.html")
@@ -90,22 +126,10 @@ def get_activities():
 
 @app.post("/activities/{activity_name}/signup")
 def signup_for_activity(activity_name: str, email: str):
-    """Sign up a student for an activity"""
-    # Validate activity exists
-    if activity_name not in activities:
-        raise HTTPException(status_code=404, detail="Activity not found")
+    """Sign up a student for an activity."""
+    validate_activity_signup(activity_name, email)
 
-    # Get the specific activity
     activity = activities[activity_name]
-
-    # Validate student is not already signed up
-    if email in activity["participants"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Student is already signed up"
-        )
-
-    # Add student
     activity["participants"].append(email)
     return {"message": f"Signed up {email} for {activity_name}"}
 
